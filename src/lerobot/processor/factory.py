@@ -25,11 +25,27 @@ from .converters import (
 from .pipeline import IdentityProcessorStep, RobotProcessorPipeline
 
 
-def make_default_teleop_action_processor() -> RobotProcessorPipeline[
+def _uses_ur_delta_teleop(robot=None, teleop=None) -> bool:
+    return getattr(robot, "name", None) == "ur_follower" and getattr(teleop, "name", None) in {
+        "gamepad",
+        "keyboard_ee",
+    }
+
+
+def make_default_teleop_action_processor(
+    robot=None, teleop=None
+) -> RobotProcessorPipeline[
     tuple[RobotAction, RobotObservation], RobotAction
 ]:
+    if _uses_ur_delta_teleop(robot, teleop):
+        from lerobot.robots.ur_follower import MapDeltaActionToURPose
+
+        steps = [MapDeltaActionToURPose()]
+    else:
+        steps = [IdentityProcessorStep()]
+
     teleop_action_processor = RobotProcessorPipeline[tuple[RobotAction, RobotObservation], RobotAction](
-        steps=[IdentityProcessorStep()],
+        steps=steps,
         to_transition=robot_action_observation_to_transition,
         to_output=transition_to_robot_action,
     )
@@ -56,8 +72,8 @@ def make_default_robot_observation_processor() -> RobotProcessorPipeline[RobotOb
     return robot_observation_processor
 
 
-def make_default_processors():
-    teleop_action_processor = make_default_teleop_action_processor()
+def make_default_processors(robot=None, teleop=None):
+    teleop_action_processor = make_default_teleop_action_processor(robot=robot, teleop=teleop)
     robot_action_processor = make_default_robot_action_processor()
     robot_observation_processor = make_default_robot_observation_processor()
     return (teleop_action_processor, robot_action_processor, robot_observation_processor)

@@ -60,6 +60,14 @@ from .robot_wrapper import ThreadSafeRobot
 logger = logging.getLogger(__name__)
 
 
+def _is_policy_scalar_feature(robot_name: str, key: str, value: object) -> bool:
+    if value is not float:
+        return False
+    if robot_name == "ur_follower":
+        return True
+    return key.endswith(".pos")
+
+
 def _resolve_action_key_order(
     policy_action_names: list[str] | None, dataset_action_names: list[str]
 ) -> list[str]:
@@ -221,18 +229,7 @@ def build_rollout_context(
         except Exception as e:
             logger.warning("Failed to apply torch.compile: %s", e)
 
-    # --- 2. Robot-side processors (user-supplied or defaults) --------
-    if (
-        teleop_action_processor is None
-        or robot_action_processor is None
-        or robot_observation_processor is None
-    ):
-        _t, _r, _o = make_default_processors()
-        teleop_action_processor = teleop_action_processor or _t
-        robot_action_processor = robot_action_processor or _r
-        robot_observation_processor = robot_observation_processor or _o
-
-    # --- 3. Hardware (heaviest side-effect, deferred) -----------------
+    # --- 2. Hardware (heaviest side-effect, deferred) -----------------
     logger.info("Connecting robot (%s)...", cfg.robot.type if cfg.robot else "?")
     robot = make_robot_from_config(cfg.robot)
     robot.connect()
@@ -252,6 +249,16 @@ def build_rollout_context(
         teleop.connect()
         logger.info("Teleoperator connected")
 
+    if (
+        teleop_action_processor is None
+        or robot_action_processor is None
+        or robot_observation_processor is None
+    ):
+        _t, _r, _o = make_default_processors(robot=robot, teleop=teleop)
+        teleop_action_processor = teleop_action_processor or _t
+        robot_action_processor = robot_action_processor or _r
+        robot_observation_processor = robot_observation_processor or _o
+
     # TODO(Steven): once Teleoperator motor-control methods are standardised
     # (``enable_torque`` / ``disable_torque`` / ``write_goal_positions``), gate
     # the DAgger strategy on their presence here and fail fast with a helpful
@@ -268,10 +275,9 @@ def build_rollout_context(
     #             f"{required_teleop_methods}. '{type(teleop).__name__}' is missing: {missing}"
     #         )
 
-    # --- 4. Features + action-key reconciliation ---------------------
-    # TODO(Steven):Only ``.pos`` joint features are routed to the policy as state and as the
-    # action target; velocity and torque channels (when present) are kept in
-    # the raw observation but excluded from the policy-facing tensors.
+    # --- 3. Features + action-key reconciliation ---------------------
+    # For most robots, only ``.pos`` joint features are routed to the policy as state and action
+    # targets. UR exposes TCP pose actions, so its scalar pose/gripper features are kept too.
     all_obs_features = robot.observation_features
     # ``observation_features`` values are either a tuple (camera shape) or the
     # ``float`` type itself used as a sentinel for scalar motor features —
@@ -279,9 +285,11 @@ def build_rollout_context(
     observation_features_hw = {
         k: v
         for k, v in all_obs_features.items()
-        if isinstance(v, tuple) or (v is float and k.endswith(".pos"))
+        if isinstance(v, tuple) or _is_policy_scalar_feature(robot.name, k, v)
     }
-    action_features_hw = {k: v for k, v in robot.action_features.items() if k.endswith(".pos")}
+    action_features_hw = {
+        k: v for k, v in robot.action_features.items() if _is_policy_scalar_feature(robot.name, k, v)
+    }
 
     # The action side is always needed: sync inference reads action names from
     # ``dataset_features[ACTION]`` to map policy tensors back to robot actions.

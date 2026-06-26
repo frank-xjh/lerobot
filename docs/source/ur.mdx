@@ -1,0 +1,169 @@
+# Universal Robots
+
+Universal Robots arms can be used in LeRobot through `ur_rtde`. The built-in robot type is
+`ur_follower`.
+
+This integration exposes end-effector pose actions while still recording joint positions. The action
+space is the TCP pose plus a gripper command:
+
+| Key            | Meaning                                  |
+| -------------- | ---------------------------------------- |
+| `ee.x`         | TCP x position in meters                 |
+| `ee.y`         | TCP y position in meters                 |
+| `ee.z`         | TCP z position in meters                 |
+| `ee.rx`        | TCP rotation-vector x component          |
+| `ee.ry`        | TCP rotation-vector y component          |
+| `ee.rz`        | TCP rotation-vector z component          |
+| `gripper.open` | `1.0` opens, `0.0` closes the gripper    |
+
+The robot writes `gripper.open` to standard digital output `0` by default. Set
+`--robot.gripper_digital_output=<N>` if your gripper is wired to another output.
+
+## Install LeRobot
+
+Follow the [Installation Guide](./installation), then install the UR extra:
+
+```bash
+pip install -e ".[ur]"
+```
+
+## Robot Setup
+
+Make sure the robot is reachable from the computer running LeRobot and that RTDE control is enabled
+on the robot. The robot must be in a safe operating mode before sending commands.
+
+<Tip warning={true}>
+  UR arms can move quickly and with high force. Start with conservative speed,
+  acceleration, and `max_relative_target` values, and keep an emergency stop within reach.
+</Tip>
+
+## Teleoperate
+
+You can teleoperate with an end-effector delta teleoperator such as `gamepad` or `keyboard_ee`.
+LeRobot automatically maps `delta_x`, `delta_y`, `delta_z`, and `gripper` into UR TCP pose
+actions using the current robot observation.
+
+```bash
+lerobot-teleoperate \
+    --robot.type=ur_follower \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.02 \
+    --robot.speed=0.15 \
+    --robot.acceleration=0.3 \
+    --teleop.type=gamepad
+```
+
+Keyboard end-effector control uses the same mapping:
+
+```bash
+lerobot-teleoperate \
+    --robot.type=ur_follower \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.02 \
+    --teleop.type=keyboard_ee
+```
+
+By default, commands are sent with `servoL`, which is intended for continuous control. For slower
+debugging or replay workflows, use:
+
+```bash
+--robot.command_mode=moveL
+```
+
+## Calibration
+
+UR arms do not use LeRobot motor calibration files. Joint encoders, kinematics, TCP transforms, and
+protective safety limits are maintained by the UR controller. Running `lerobot-calibrate` with
+`ur_follower` connects to the robot, reports that no LeRobot calibration is required, and disconnects.
+
+Connecting does not move the robot to a default pose. Motion only starts when actions are sent.
+
+## Safety
+
+Use conservative values first:
+
+```bash
+--robot.max_relative_target=0.01 \
+--robot.speed=0.10 \
+--robot.acceleration=0.2
+```
+
+You can also constrain the TCP workspace:
+
+```bash
+--robot.workspace_bounds='{"ee.x": [0.2, 0.7], "ee.y": [-0.4, 0.4], "ee.z": [0.05, 0.5]}'
+```
+
+Workspace bounds are applied after per-step relative target clipping. Configure the robot-side TCP,
+payload, tool center point, safety planes, and reduced mode on the UR controller for your physical
+setup.
+
+## Record
+
+Recording uses the same robot arguments:
+
+```bash
+lerobot-record \
+    --robot.type=ur_follower \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.02 \
+    --robot.cameras="{front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
+    --teleop.type=gamepad \
+    --dataset.repo_id=<USER>/<DATASET> \
+    --dataset.num_episodes=10 \
+    --dataset.single_task="Pick and place the object"
+```
+
+The dataset observations include the current TCP pose, six joint positions, the gripper state, and
+any configured cameras.
+
+## Replay
+
+Datasets recorded with `ur_follower` can be replayed with the same robot configuration. Use
+`command_mode=moveL` for slower debugging, or keep the default `servoL` for continuous control.
+
+```bash
+lerobot-replay \
+    --robot.type=ur_follower \
+    --robot.ip=192.168.0.10 \
+    --robot.command_mode=moveL \
+    --dataset.repo_id=<USER>/<DATASET> \
+    --dataset.episode=0
+```
+
+## Rollout
+
+Policies trained on UR datasets can be deployed with `lerobot-rollout`. UR action features are kept
+as TCP pose keys (`ee.*`) plus `gripper.open`, so the rollout stack does not require joint-action
+policies for UR.
+
+```bash
+lerobot-rollout \
+    --robot.type=ur_follower \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.02 \
+    --policy.path=<PATH_OR_HUB_ID> \
+    --dataset.repo_id=<USER>/eval_<DATASET> \
+    --dataset.single_task="Pick and place the object"
+```
+
+## Command Support
+
+Supported commands:
+
+| Command                | UR behavior                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| `lerobot-teleoperate`  | Supports `gamepad` and `keyboard_ee` through automatic delta-to-TCP-pose mapping   |
+| `lerobot-record`       | Records TCP pose actions, joint/TCP observations, gripper state, and cameras       |
+| `lerobot-replay`       | Replays recorded TCP pose actions                                                  |
+| `lerobot-rollout`      | Deploys policies that output `ee.*` and `gripper.open` actions                     |
+| `lerobot-calibrate`    | Connects and exits; UR calibration is handled by the UR controller                 |
+| `lerobot-setup-motors` | Not applicable; UR motors are configured by the UR controller                      |
+| `lerobot-find-port`    | Not applicable; UR connects by IP address                                          |
+
+## Model Sizes
+
+No LeRobot code changes are required to switch between UR3, UR5, UR10, or similar UR arms. The RTDE
+target is the robot controller at `--robot.ip`, and the controller handles the model-specific
+kinematics. You should still adjust speed, acceleration, TCP/payload, and workspace bounds for the
+specific arm and task.

@@ -128,6 +128,7 @@ from lerobot.robots import (  # noqa: F401
     rebot_b601_follower,
     so_follower,
     unitree_g1 as unitree_g1_robot,
+    ur_follower,
 )
 from lerobot.teleoperators import (  # noqa: F401
     Teleoperator,
@@ -370,7 +371,7 @@ def record(
         or robot_action_processor is None
         or robot_observation_processor is None
     ):
-        _t, _r, _o = make_default_processors()
+        _t, _r, _o = make_default_processors(robot=robot, teleop=teleop)
         teleop_action_processor = teleop_action_processor or _t
         robot_action_processor = robot_action_processor or _r
         robot_observation_processor = robot_observation_processor or _o

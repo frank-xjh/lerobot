@@ -97,6 +97,16 @@ class URFollower(Robot):
     def action_features(self) -> dict[str, type]:
         return {**self._ee_pose_ft, **self._gripper_ft}
 
+    def default_teleop_action_processor_steps(self, teleop=None) -> list:
+        if getattr(teleop, "name", None) in {"gamepad", "keyboard_ee"}:
+            from .processor import MapDeltaActionToURPose
+
+            return [MapDeltaActionToURPose()]
+        return []
+
+    def is_policy_feature(self, key: str, value: object) -> bool:
+        return isinstance(value, tuple) or value is float
+
     @property
     def is_connected(self) -> bool:
         rtde_connected = self.rtde_control is not None and self.rtde_receive is not None and self.rtde_io is not None

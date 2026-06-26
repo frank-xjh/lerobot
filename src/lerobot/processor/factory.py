@@ -25,24 +25,13 @@ from .converters import (
 from .pipeline import IdentityProcessorStep, RobotProcessorPipeline
 
 
-def _uses_ur_delta_teleop(robot=None, teleop=None) -> bool:
-    return getattr(robot, "name", None) == "ur_follower" and getattr(teleop, "name", None) in {
-        "gamepad",
-        "keyboard_ee",
-    }
-
-
 def make_default_teleop_action_processor(
     robot=None, teleop=None
 ) -> RobotProcessorPipeline[
     tuple[RobotAction, RobotObservation], RobotAction
 ]:
-    if _uses_ur_delta_teleop(robot, teleop):
-        from lerobot.robots.ur_follower import MapDeltaActionToURPose
-
-        steps = [MapDeltaActionToURPose()]
-    else:
-        steps = [IdentityProcessorStep()]
+    steps = robot.default_teleop_action_processor_steps(teleop) if robot is not None else []
+    steps = steps or [IdentityProcessorStep()]
 
     teleop_action_processor = RobotProcessorPipeline[tuple[RobotAction, RobotObservation], RobotAction](
         steps=steps,

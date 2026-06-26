@@ -15,6 +15,7 @@
 import abc
 import builtins
 from pathlib import Path
+from typing import Any
 
 import draccus
 
@@ -83,6 +84,14 @@ class Robot(abc.ABC):
                 self.disconnect()
         except Exception:  # nosec B110
             pass
+
+    def default_teleop_action_processor_steps(self, teleop: Any | None = None) -> list[Any]:
+        """Robot-specific default steps for adapting teleoperator actions to robot actions."""
+        return []
+
+    def is_policy_feature(self, key: str, value: object) -> bool:
+        """Whether a hardware feature should be exposed to policy-facing tensors by default."""
+        return isinstance(value, tuple) or (value is float and key.endswith(".pos"))
 
     # TODO(aliberts): create a proper Feature class for this that links with datasets
     @property

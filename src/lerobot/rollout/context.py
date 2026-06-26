@@ -60,14 +60,6 @@ from .robot_wrapper import ThreadSafeRobot
 logger = logging.getLogger(__name__)
 
 
-def _is_policy_scalar_feature(robot_name: str, key: str, value: object) -> bool:
-    if value is not float:
-        return False
-    if robot_name == "ur_follower":
-        return True
-    return key.endswith(".pos")
-
-
 def _resolve_action_key_order(
     policy_action_names: list[str] | None, dataset_action_names: list[str]
 ) -> list[str]:
@@ -285,11 +277,9 @@ def build_rollout_context(
     observation_features_hw = {
         k: v
         for k, v in all_obs_features.items()
-        if isinstance(v, tuple) or _is_policy_scalar_feature(robot.name, k, v)
+        if robot.is_policy_feature(k, v)
     }
-    action_features_hw = {
-        k: v for k, v in robot.action_features.items() if _is_policy_scalar_feature(robot.name, k, v)
-    }
+    action_features_hw = {k: v for k, v in robot.action_features.items() if robot.is_policy_feature(k, v)}
 
     # The action side is always needed: sync inference reads action names from
     # ``dataset_features[ACTION]`` to map policy tensors back to robot actions.

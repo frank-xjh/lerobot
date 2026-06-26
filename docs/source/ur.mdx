@@ -37,6 +37,179 @@ on the robot. The robot must be in a safe operating mode before sending commands
   acceleration, and `max_relative_target` values, and keep an emergency stop within reach.
 </Tip>
 
+## UR3e First Run Checklist (中文)
+
+下面是一条建议的首次上手机器流程，目标是先确认连接，再用极小速度确认遥控方向，最后再开始采集数据。UR3e 不需要单独的 LeRobot 机械臂型号参数，仍然使用
+`--robot.type=ur_follower`；UR 控制器会处理 UR3e 的具体运动学。
+
+### 1. 物理和安全准备
+
+在运行任何 LeRobot 命令前，先完成这些检查：
+
+- 清空机械臂工作空间，确认工具、夹爪、线缆不会碰撞桌面、相机架、人或工装。
+- 在 UR 示教器上设置正确的 TCP、payload、安装方向、安全平面和 reduced mode。
+- 让机械臂停在一个安全的中间位姿，远离关节限位和障碍物。
+- 首次测试时一只手保持在急停或保护停止可触达位置。
+- 不要假设连接会自动回到默认位置。`ur_follower` 连接、校准和断开都不会主动移动机械臂；只有遥控、录制、回放或 rollout 发送 action 时才会运动。
+- 如果夹爪接在 digital output `0`，默认无需改参数；否则设置 `--robot.gripper_digital_output=<N>`。如果开合逻辑相反，设置 `--robot.gripper_open_state=false`。
+
+### 2. 安装依赖并确认网络
+
+在 LeRobot checkout 中运行：
+
+```bash
+uv sync --locked --extra core_scripts --extra ur --extra gamepad
+```
+
+确认电脑能访问 UR 控制器 IP：
+
+```bash
+ping -c 3 192.168.0.10
+```
+
+把 `192.168.0.10` 替换成你的 UR3e 控制器 IP。
+
+### 3. 只测试连接，不移动
+
+先用 `lerobot-calibrate` 做一次连接/断开测试。对 UR 来说这是 no-op 风格校准，不会写入 LeRobot 电机校准文件，也不会移动到默认位姿。
+
+```bash
+uv run --extra core_scripts --extra ur lerobot-calibrate \
+    --robot.type=ur_follower \
+    --robot.ip=192.168.0.10
+```
+
+如果这一步失败，先不要进入遥控。优先检查 IP、UR 端 RTDE 是否可用、防火墙、机器人是否处于可接受外部控制的状态。
+
+### 4. 先用键盘做 5 秒小步遥控
+
+第一次建议先不用手柄，使用 `keyboard_ee`，因为键盘按键更容易做单方向、短时间测试。下面命令把每次目标变化限制到 `0.005 m`，速度限制到 `0.03 m/s`，并且 5 秒后自动退出。
+
+```bash
+uv run --extra core_scripts --extra ur lerobot-teleoperate \
+    --robot.type=ur_follower \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.005 \
+    --robot.speed=0.03 \
+    --robot.acceleration=0.05 \
+    --fps=10 \
+    --teleop_time_s=5 \
+    --teleop.type=keyboard_ee
+```
+
+`keyboard_ee` 的移动按键：
+
+| Key | Action |
+| --- | ------ |
+| `←` / `→` | TCP x 方向小步移动 |
+| `↑` / `↓` | TCP y 方向小步移动 |
+| left/right `Shift` | TCP z 方向小步移动 |
+| left/right `Ctrl` | 夹爪关闭/打开 |
+| `Esc` | 停止键盘监听 |
+
+如果方向和你的现场直觉不一致，先停止命令并重新确认坐标系，不要用连续长按来试探。键盘遥控依赖 `pynput`；在 Linux Wayland、headless/SSH 或 macOS 未授权 Accessibility/Input Monitoring 时可能捕获不到按键，这种情况下优先改用支持输入捕获的桌面会话或再测试手柄。
+
+### 5. 再测试手柄连接和方向
+
+手柄遥控同样先限制在 5 秒，并保持很小的速度和位移上限：
+
+```bash
+uv run --extra core_scripts --extra ur --extra gamepad lerobot-teleoperate \
+    --robot.type=ur_follower \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.005 \
+    --robot.speed=0.03 \
+    --robot.acceleration=0.05 \
+    --fps=10 \
+    --teleop_time_s=5 \
+    --teleop.type=gamepad
+```
+
+手柄默认映射：
+
+| Control | Action |
+| ------- | ------ |
+| Left stick | TCP x/y 平面移动 |
+| Right stick vertical | TCP z 方向移动 |
+| RB / LT | 夹爪关闭/打开 |
+
+使用 `--teleop_time_s` 可以让首次测试自动限时退出；需要提前停止时，在运行命令的终端按 `Ctrl-C`。
+
+不同手柄的轴编号和方向可能不同。第一次只轻推一个轴，确认实际运动方向和幅度后再继续。如果机械臂出现持续移动、方向反了、摇杆漂移、夹爪 IO 状态不符合预期，立即松开输入并停止命令，先不要录制数据。
+
+### 6. 给 UR3e 设置工作空间限制
+
+确认基本方向后，建议把 TCP 工作空间限制在任务区域内。下面只是示例，必须按你的现场安全区域修改：
+
+```bash
+--robot.workspace_bounds='{"ee.x": [0.25, 0.55], "ee.y": [-0.25, 0.25], "ee.z": [0.08, 0.35]}'
+```
+
+`workspace_bounds` 会在每步相对目标裁剪之后再限制最终 TCP 目标。它不能替代 UR 控制器的安全平面、速度限制、保护停止和现场急停，只是 LeRobot 侧的额外限制。
+
+### 7. 先采一条短数据，不上传 Hub
+
+确认遥控稳定后，先录制 1 条 10 秒以内的本地 smoke test 数据。第一次可以先不接相机，确认 action/observation 流程；之后再加 `--robot.cameras=...`。
+
+```bash
+uv run --extra core_scripts --extra ur --extra gamepad lerobot-record \
+    --robot.type=ur_follower \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.005 \
+    --robot.speed=0.03 \
+    --robot.acceleration=0.05 \
+    --teleop.type=gamepad \
+    --dataset.fps=10 \
+    --dataset.repo_id=local/ur3e_smoke \
+    --dataset.num_episodes=1 \
+    --dataset.episode_time_s=10 \
+    --dataset.reset_time_s=5 \
+    --dataset.single_task="UR3e smoke test" \
+    --dataset.video=false \
+    --dataset.push_to_hub=false
+```
+
+数据采集时，保存的是经过 UR 默认处理器转换后的 TCP pose action，也会记录当前 TCP pose、六个关节位置、`gripper.open` 和配置的相机。短数据正常后，再逐步增加 `episode_time_s`、相机、任务复杂度和速度。
+
+### 8. 多条数据之间如何复位
+
+`lerobot-record` 的现有流程是在每条 episode 录制结束后进入一段 reset phase，用同一个 teleop 继续控制机器人，但这段时间不写入 dataset。也就是说，复位不是 UR 自动回到某个默认点，而是你在 `--dataset.reset_time_s` 这段时间内手动把机械臂、夹爪和物体恢复到下一条数据的起始状态。
+
+例如采 3 条短数据，每条 10 秒，中间给 15 秒人工复位：
+
+```bash
+uv run --extra core_scripts --extra ur --extra gamepad lerobot-record \
+    --robot.type=ur_follower \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.005 \
+    --robot.speed=0.03 \
+    --robot.acceleration=0.05 \
+    --teleop.type=gamepad \
+    --dataset.fps=10 \
+    --dataset.repo_id=local/ur3e_reset_smoke \
+    --dataset.num_episodes=3 \
+    --dataset.episode_time_s=10 \
+    --dataset.reset_time_s=15 \
+    --dataset.single_task="UR3e reset smoke test" \
+    --dataset.video=false \
+    --dataset.push_to_hub=false
+```
+
+安全建议：
+
+- reset phase 仍然会真实发送 UR TCP pose action，必须保留同样保守的 `max_relative_target`、`speed`、`acceleration` 和 workspace bounds。
+- 不要依赖自动 homing。UR 当前实现不会在 episode 后自动移动到固定起点，避免在未知现场布局里产生大幅位移。
+- 如果下一条数据需要固定起始姿态，先用遥控把 TCP 移回你定义的安全起始区域，再开始下一条 episode。
+- 最后一条 episode 录完后默认不会再进入 reset phase，程序会保存数据并断开连接。
+
+### 9. 常见首次问题
+
+- `No gamepad detected`：确认手柄已连接并被系统识别；Linux 通常走 `pygame`，macOS 会优先走 `hidapi`。
+- 键盘没有反应：确认不是 Wayland/headless/SSH 环境，macOS 需要给终端 Accessibility/Input Monitoring 权限。
+- 机械臂不动：确认 UR 处于可接收 RTDE 控制状态，没有 protective stop，且 `max_relative_target`、workspace bounds 没把目标完全裁掉。
+- 夹爪方向相反：切换 `--robot.gripper_open_state=false`。
+- 第一次出现任何意外运动：降低到 `--robot.max_relative_target=0.002 --robot.speed=0.01 --robot.acceleration=0.02`，并缩短 `--teleop_time_s` 后重新单轴测试。
+
 ## Teleoperate
 
 You can teleoperate with an end-effector delta teleoperator such as `gamepad` or `keyboard_ee`.

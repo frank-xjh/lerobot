@@ -61,6 +61,72 @@ on the robot. The robot must be in a safe operating mode before sending commands
 uv sync --locked --extra core_scripts --extra ur --extra gamepad
 ```
 
+如果你的机器没有安装 `uv`，也可以用 Python venv 和 `pip`。在 LeRobot checkout 中运行：
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -e ".[core_scripts,ur,gamepad]"
+```
+
+安装完成后，后面的 `uv run --extra ... <command>` 可以直接替换成 `<command>`。例如：
+
+```bash
+lerobot-calibrate \
+    --robot.type=ur_follower \
+    --robot.id=ur3e \
+    --robot.ip=192.168.0.10
+```
+
+```bash
+lerobot-teleoperate \
+    --robot.type=ur_follower \
+    --robot.id=ur3e \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.005 \
+    --robot.speed=0.03 \
+    --robot.acceleration=0.05 \
+    --fps=10 \
+    --teleop_time_s=5 \
+    --teleop.type=keyboard_ee
+```
+
+```bash
+lerobot-record \
+    --robot.type=ur_follower \
+    --robot.id=ur3e \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.005 \
+    --robot.speed=0.03 \
+    --robot.acceleration=0.05 \
+    --teleop.type=gamepad \
+    --dataset.fps=10 \
+    --dataset.repo_id=local/ur3e_smoke \
+    --dataset.num_episodes=1 \
+    --dataset.episode_time_s=10 \
+    --dataset.reset_time_s=5 \
+    --dataset.single_task="UR3e smoke test" \
+    --dataset.video=false \
+    --dataset.push_to_hub=false
+```
+
+Windows `cmd` / PowerShell 可以直接使用一行命令，避免 Unix 风格的 `\` 续行。下面以已经通过 `pip` 安装后的命令为例：
+
+```bash
+lerobot-calibrate --robot.type=ur_follower --robot.id=ur3e --robot.ip=192.168.0.10
+```
+
+```bash
+lerobot-teleoperate --robot.type=ur_follower --robot.id=ur3e --robot.ip=192.168.0.10 --robot.max_relative_target=0.005 --robot.speed=0.03 --robot.acceleration=0.05 --fps=10 --teleop_time_s=5 --teleop.type=keyboard_ee
+```
+
+```bash
+lerobot-record --robot.type=ur_follower --robot.id=ur3e --robot.ip=192.168.0.10 --robot.max_relative_target=0.005 --robot.speed=0.03 --robot.acceleration=0.05 --teleop.type=gamepad --dataset.fps=10 --dataset.repo_id=local/ur3e_smoke --dataset.num_episodes=1 --dataset.episode_time_s=10 --dataset.reset_time_s=5 --dataset.single_task="UR3e smoke test" --dataset.video=false --dataset.push_to_hub=false
+```
+
+如果 `python -m pip install -e ".[core_scripts,ur,gamepad]"` 里 `ur-rtde` 编译失败，通常是本机缺少 CMake/Boost 等编译依赖，或者当前 Python 版本没有合适的 wheel。优先使用 Python 3.12，并按系统包管理器安装缺失的 C++/Boost/CMake 依赖后再重试。
+
 确认电脑能访问 UR 控制器 IP：
 
 ```bash
@@ -76,6 +142,7 @@ ping -c 3 192.168.0.10
 ```bash
 uv run --extra core_scripts --extra ur lerobot-calibrate \
     --robot.type=ur_follower \
+    --robot.id=ur3e \
     --robot.ip=192.168.0.10
 ```
 
@@ -88,6 +155,7 @@ uv run --extra core_scripts --extra ur lerobot-calibrate \
 ```bash
 uv run --extra core_scripts --extra ur lerobot-teleoperate \
     --robot.type=ur_follower \
+    --robot.id=ur3e \
     --robot.ip=192.168.0.10 \
     --robot.max_relative_target=0.005 \
     --robot.speed=0.03 \
@@ -116,6 +184,7 @@ uv run --extra core_scripts --extra ur lerobot-teleoperate \
 ```bash
 uv run --extra core_scripts --extra ur --extra gamepad lerobot-teleoperate \
     --robot.type=ur_follower \
+    --robot.id=ur3e \
     --robot.ip=192.168.0.10 \
     --robot.max_relative_target=0.005 \
     --robot.speed=0.03 \
@@ -154,6 +223,7 @@ uv run --extra core_scripts --extra ur --extra gamepad lerobot-teleoperate \
 ```bash
 uv run --extra core_scripts --extra ur --extra gamepad lerobot-record \
     --robot.type=ur_follower \
+    --robot.id=ur3e \
     --robot.ip=192.168.0.10 \
     --robot.max_relative_target=0.005 \
     --robot.speed=0.03 \
@@ -180,6 +250,7 @@ uv run --extra core_scripts --extra ur --extra gamepad lerobot-record \
 ```bash
 uv run --extra core_scripts --extra ur --extra gamepad lerobot-record \
     --robot.type=ur_follower \
+    --robot.id=ur3e \
     --robot.ip=192.168.0.10 \
     --robot.max_relative_target=0.005 \
     --robot.speed=0.03 \
@@ -219,6 +290,7 @@ actions using the current robot observation.
 ```bash
 lerobot-teleoperate \
     --robot.type=ur_follower \
+    --robot.id=ur3e \
     --robot.ip=192.168.0.10 \
     --robot.max_relative_target=0.02 \
     --robot.speed=0.15 \
@@ -231,6 +303,7 @@ Keyboard end-effector control uses the same mapping:
 ```bash
 lerobot-teleoperate \
     --robot.type=ur_follower \
+    --robot.id=ur3e \
     --robot.ip=192.168.0.10 \
     --robot.max_relative_target=0.02 \
     --teleop.type=keyboard_ee
@@ -278,6 +351,7 @@ Recording uses the same robot arguments:
 ```bash
 lerobot-record \
     --robot.type=ur_follower \
+    --robot.id=ur3e \
     --robot.ip=192.168.0.10 \
     --robot.max_relative_target=0.02 \
     --robot.cameras="{front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
@@ -298,6 +372,7 @@ Datasets recorded with `ur_follower` can be replayed with the same robot configu
 ```bash
 lerobot-replay \
     --robot.type=ur_follower \
+    --robot.id=ur3e \
     --robot.ip=192.168.0.10 \
     --robot.command_mode=moveL \
     --dataset.repo_id=<USER>/<DATASET> \
@@ -313,6 +388,7 @@ policies for UR.
 ```bash
 lerobot-rollout \
     --robot.type=ur_follower \
+    --robot.id=ur3e \
     --robot.ip=192.168.0.10 \
     --robot.max_relative_target=0.02 \
     --policy.path=<PATH_OR_HUB_ID> \

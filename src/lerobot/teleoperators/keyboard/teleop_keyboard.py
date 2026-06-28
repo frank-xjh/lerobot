@@ -124,6 +124,10 @@ class KeyboardTeleop(Teleoperator):
                 self.current_pressed[key_char] = True
             else:
                 self.current_pressed.pop(key_char, None)
+            self._on_key_state_change(key_char, is_pressed)
+
+    def _on_key_state_change(self, key, is_pressed: bool) -> None:
+        pass
 
     def configure(self):
         pass
@@ -162,6 +166,8 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
         super().__init__(config)
         self.config = config
         self.misc_keys_queue = Queue()
+        self._axis_direction = {"x": 0.0, "y": 0.0, "z": 0.0}
+        self._gripper_action = 1.0
 
     @property
     def action_features(self) -> dict:
@@ -181,23 +187,7 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
     @check_if_not_connected
     def get_action(self) -> RobotAction:
         self._drain_pressed_keys()
-        delta_x = 0.0
-        delta_y = 0.0
-        delta_z = 0.0
-        gripper_action = 1.0
-
         active_keys = {key for key, val in self.current_pressed.items() if val}
-
-        delta_y += -1.0 if keyboard.Key.up in active_keys else 0.0
-        delta_y += 1.0 if keyboard.Key.down in active_keys else 0.0
-        delta_x += 1.0 if keyboard.Key.left in active_keys else 0.0
-        delta_x += -1.0 if keyboard.Key.right in active_keys else 0.0
-        delta_z += -1.0 if keyboard.Key.shift in active_keys else 0.0
-        delta_z += 1.0 if keyboard.Key.shift_r in active_keys else 0.0
-
-        # Gripper actions are expected to be between 0 (close), 1 (stay), 2 (open).
-        gripper_action += 1.0 if keyboard.Key.ctrl_r in active_keys else 0.0
-        gripper_action += -1.0 if keyboard.Key.ctrl_l in active_keys else 0.0
 
         for key in active_keys:
             if key not in {
@@ -215,15 +205,43 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
                 self.misc_keys_queue.put(key)
 
         action_dict = {
-            "delta_x": delta_x,
-            "delta_y": delta_y,
-            "delta_z": delta_z,
+            "delta_x": self._axis_direction["x"],
+            "delta_y": self._axis_direction["y"],
+            "delta_z": self._axis_direction["z"],
         }
 
         if self.config.use_gripper:
-            action_dict["gripper"] = gripper_action
+            action_dict["gripper"] = self._gripper_action
 
         return action_dict
+
+    def _on_key_state_change(self, key, is_pressed: bool) -> None:
+        direction_by_key = {
+            keyboard.Key.up: ("y", -1.0),
+            keyboard.Key.down: ("y", 1.0),
+            keyboard.Key.left: ("x", 1.0),
+            keyboard.Key.right: ("x", -1.0),
+            keyboard.Key.shift: ("z", -1.0),
+            keyboard.Key.shift_r: ("z", 1.0),
+        }
+        if key in direction_by_key:
+            axis, direction = direction_by_key[key]
+            if is_pressed:
+                self._axis_direction[axis] = direction
+            elif self._axis_direction[axis] == direction:
+                self._axis_direction[axis] = 0.0
+            return
+
+        gripper_by_key = {
+            keyboard.Key.ctrl_l: 0.0,
+            keyboard.Key.ctrl_r: 2.0,
+        }
+        if key in gripper_by_key:
+            action = gripper_by_key[key]
+            if is_pressed:
+                self._gripper_action = action
+            elif self._gripper_action == action:
+                self._gripper_action = 1.0
 
     def get_teleop_events(self) -> dict[str, Any]:
         """

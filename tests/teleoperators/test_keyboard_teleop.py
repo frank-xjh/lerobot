@@ -46,32 +46,40 @@ def _get_action_without_connection_check(teleop):
     return KeyboardEndEffectorTeleop.get_action.__wrapped__(teleop)
 
 
-def test_keyboard_ee_ignores_stale_released_opposite_keys(monkeypatch):
+def test_keyboard_ee_opposite_key_press_overrides_stale_direction(monkeypatch):
     teleop = _make_keyboard_ee(monkeypatch)
-    teleop.current_pressed = {
-        _Key.left: True,
-        _Key.right: False,
-        _Key.up: True,
-        _Key.down: False,
-        _Key.shift: True,
-        _Key.shift_r: False,
-    }
 
+    teleop.event_queue.put((_Key.down, True))
+    assert _get_action_without_connection_check(teleop)["delta_y"] == 1.0
+
+    # Simulate a missed release event for the previous direction.
+    teleop.event_queue.put((_Key.up, True))
     action = _get_action_without_connection_check(teleop)
 
-    assert action["delta_x"] == 1.0
     assert action["delta_y"] == -1.0
+
+    teleop.event_queue.put((_Key.left, True))
+    assert _get_action_without_connection_check(teleop)["delta_x"] == 1.0
+
+    teleop.event_queue.put((_Key.right, True))
+    action = _get_action_without_connection_check(teleop)
+    assert action["delta_x"] == -1.0
+
+    teleop.event_queue.put((_Key.shift_r, True))
+    assert _get_action_without_connection_check(teleop)["delta_z"] == 1.0
+
+    teleop.event_queue.put((_Key.shift, True))
+    action = _get_action_without_connection_check(teleop)
     assert action["delta_z"] == -1.0
 
 
-def test_keyboard_ee_removes_released_keys_before_next_action(monkeypatch):
+def test_keyboard_ee_releasing_current_direction_stops_axis(monkeypatch):
     teleop = _make_keyboard_ee(monkeypatch)
     teleop.event_queue.put((_Key.left, True))
     assert _get_action_without_connection_check(teleop)["delta_x"] == 1.0
 
     teleop.event_queue.put((_Key.left, False))
-    teleop.event_queue.put((_Key.right, True))
     action = _get_action_without_connection_check(teleop)
 
     assert _Key.left not in teleop.current_pressed
-    assert action["delta_x"] == -1.0
+    assert action["delta_x"] == 0.0

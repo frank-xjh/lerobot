@@ -120,7 +120,10 @@ class KeyboardTeleop(Teleoperator):
     def _drain_pressed_keys(self):
         while not self.event_queue.empty():
             key_char, is_pressed = self.event_queue.get_nowait()
-            self.current_pressed[key_char] = is_pressed
+            if is_pressed:
+                self.current_pressed[key_char] = True
+            else:
+                self.current_pressed.pop(key_char, None)
 
     def configure(self):
         pass
@@ -183,29 +186,32 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
         delta_z = 0.0
         gripper_action = 1.0
 
-        # Generate action based on current key states
-        for key, val in self.current_pressed.items():
-            if key == keyboard.Key.up:
-                delta_y = -int(val)
-            elif key == keyboard.Key.down:
-                delta_y = int(val)
-            elif key == keyboard.Key.left:
-                delta_x = int(val)
-            elif key == keyboard.Key.right:
-                delta_x = -int(val)
-            elif key == keyboard.Key.shift:
-                delta_z = -int(val)
-            elif key == keyboard.Key.shift_r:
-                delta_z = int(val)
-            elif key == keyboard.Key.ctrl_r:
-                # Gripper actions are expected to be between 0 (close), 1 (stay), 2 (open)
-                gripper_action = int(val) + 1
-            elif key == keyboard.Key.ctrl_l:
-                gripper_action = int(val) - 1
-            elif val:
-                # If the key is pressed, add it to the misc_keys_queue
-                # this will record key presses that are not part of the delta_x, delta_y, delta_z
-                # this is useful for retrieving other events like interventions for RL, episode success, etc.
+        active_keys = {key for key, val in self.current_pressed.items() if val}
+
+        delta_y += -1.0 if keyboard.Key.up in active_keys else 0.0
+        delta_y += 1.0 if keyboard.Key.down in active_keys else 0.0
+        delta_x += 1.0 if keyboard.Key.left in active_keys else 0.0
+        delta_x += -1.0 if keyboard.Key.right in active_keys else 0.0
+        delta_z += -1.0 if keyboard.Key.shift in active_keys else 0.0
+        delta_z += 1.0 if keyboard.Key.shift_r in active_keys else 0.0
+
+        # Gripper actions are expected to be between 0 (close), 1 (stay), 2 (open).
+        gripper_action += 1.0 if keyboard.Key.ctrl_r in active_keys else 0.0
+        gripper_action += -1.0 if keyboard.Key.ctrl_l in active_keys else 0.0
+
+        for key in active_keys:
+            if key not in {
+                keyboard.Key.up,
+                keyboard.Key.down,
+                keyboard.Key.left,
+                keyboard.Key.right,
+                keyboard.Key.shift,
+                keyboard.Key.shift_r,
+                keyboard.Key.ctrl_r,
+                keyboard.Key.ctrl_l,
+            }:
+                # This records key presses that are not part of the motion action,
+                # such as episode success/rerecord/quit events.
                 self.misc_keys_queue.put(key)
 
         action_dict = {

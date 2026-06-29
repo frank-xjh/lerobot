@@ -42,6 +42,15 @@ class KeyboardEndEffectorTeleopConfig(KeyboardTeleopConfig):
     use_gripper: bool = True
 
 
+@TeleoperatorConfig.register_subclass("terminal_keyboard_ee")
+@dataclass
+class TerminalKeyboardEndEffectorTeleopConfig(TeleoperatorConfig):
+    """Terminal keyboard end-effector teleoperator for SSH/headless sessions."""
+
+    use_gripper: bool = True
+    command_timeout_s: float = 0.25
+
+
 @TeleoperatorConfig.register_subclass("keyboard_rover")
 @dataclass
 class KeyboardRoverTeleopConfig(TeleoperatorConfig):

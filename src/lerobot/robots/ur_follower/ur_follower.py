@@ -98,7 +98,7 @@ class URFollower(Robot):
         return {**self._ee_pose_ft, **self._gripper_ft}
 
     def default_teleop_action_processor_steps(self, teleop=None) -> list:
-        if getattr(teleop, "name", None) in {"gamepad", "keyboard_ee"}:
+        if getattr(teleop, "name", None) in {"gamepad", "keyboard_ee", "terminal_keyboard_ee"}:
             from .processor import MapDeltaActionToURPose
 
             return [MapDeltaActionToURPose()]

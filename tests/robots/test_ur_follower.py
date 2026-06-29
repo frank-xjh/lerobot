@@ -189,3 +189,29 @@ def test_default_processors_map_keyboard_ee_delta_to_ur_pose(follower):
     assert action["ee.y"] == pytest.approx(0.11)
     assert action["ee.z"] == pytest.approx(0.2)
     assert action[GRIPPER_OPEN] == 1.0
+
+
+def test_default_processors_map_terminal_keyboard_ee_delta_to_ur_pose(follower):
+    robot, _control, _receive, _io = follower
+    teleop = MagicMock(name="TerminalKeyboardEndEffectorTeleop")
+    teleop.name = "terminal_keyboard_ee"
+
+    teleop_action_processor, _robot_action_processor, _obs_processor = make_default_processors(
+        robot=robot, teleop=teleop
+    )
+    observation = {
+        "ee.x": 0.4,
+        "ee.y": 0.1,
+        "ee.z": 0.2,
+        "ee.rx": 0.0,
+        "ee.ry": 3.14,
+        "ee.rz": 0.0,
+        GRIPPER_OPEN: 1.0,
+    }
+
+    action = teleop_action_processor(({"delta_x": 0.0, "delta_y": 0.0, "delta_z": 1.0}, observation))
+
+    assert action["ee.x"] == pytest.approx(0.4)
+    assert action["ee.y"] == pytest.approx(0.1)
+    assert action["ee.z"] == pytest.approx(0.21)
+    assert action[GRIPPER_OPEN] == 1.0

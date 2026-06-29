@@ -15,9 +15,18 @@
 # limitations under the License.
 
 import logging
+import select
+import sys
 import time
 from queue import Queue
 from typing import Any
+
+try:
+    import termios
+    import tty
+except ImportError:  # pragma: no cover - POSIX-only terminal teleop.
+    termios = None
+    tty = None
 
 from lerobot.types import RobotAction
 from lerobot.utils.decorators import check_if_already_connected, check_if_not_connected
@@ -30,6 +39,7 @@ from .configuration_keyboard import (
     KeyboardEndEffectorTeleopConfig,
     KeyboardRoverTeleopConfig,
     KeyboardTeleopConfig,
+    TerminalKeyboardEndEffectorTeleopConfig,
 )
 
 PYNPUT_AVAILABLE = _pynput_available
@@ -307,6 +317,161 @@ class KeyboardEndEffectorTeleop(KeyboardTeleop):
             TeleopEvents.SUCCESS: success,
             TeleopEvents.RERECORD_EPISODE: rerecord_episode,
         }
+
+
+class TerminalKeyboardEndEffectorTeleop(Teleoperator):
+    """End-effector teleoperation from an interactive terminal.
+
+    This is intended for Linux SSH/headless sessions where pynput cannot capture
+    global keyboard events.
+    """
+
+    config_class = TerminalKeyboardEndEffectorTeleopConfig
+    name = "terminal_keyboard_ee"
+
+    def __init__(self, config: TerminalKeyboardEndEffectorTeleopConfig):
+        super().__init__(config)
+        self.config = config
+        self._old_terminal_settings = None
+        self._axis_direction = {"x": 0.0, "y": 0.0, "z": 0.0}
+        self._axis_updated_at = {"x": 0.0, "y": 0.0, "z": 0.0}
+        self._gripper_action = 1.0
+        self._gripper_updated_at = 0.0
+
+    @property
+    def action_features(self) -> dict:
+        if self.config.use_gripper:
+            return {
+                "dtype": "float32",
+                "shape": (4,),
+                "names": {"delta_x": 0, "delta_y": 1, "delta_z": 2, "gripper": 3},
+            }
+        return {
+            "dtype": "float32",
+            "shape": (3,),
+            "names": {"delta_x": 0, "delta_y": 1, "delta_z": 2},
+        }
+
+    @property
+    def feedback_features(self) -> dict:
+        return {}
+
+    @property
+    def is_connected(self) -> bool:
+        return self._old_terminal_settings is not None
+
+    @property
+    def is_calibrated(self) -> bool:
+        return True
+
+    @check_if_already_connected
+    def connect(self) -> None:
+        if termios is None or tty is None:
+            raise ConnectionError("terminal_keyboard_ee is only supported on POSIX terminals.")
+        if not sys.stdin.isatty():
+            raise ConnectionError("terminal_keyboard_ee requires an interactive terminal.")
+        self._old_terminal_settings = termios.tcgetattr(sys.stdin)
+        tty.setcbreak(sys.stdin.fileno())
+        print(
+            "Terminal keyboard EE controls: arrows or WASD move x/y, U/J move z, "
+            "O/C open/close gripper, Space stops motion."
+        )
+
+    def calibrate(self) -> None:
+        pass
+
+    def configure(self) -> None:
+        pass
+
+    @check_if_not_connected
+    def get_action(self) -> RobotAction:
+        now = time.perf_counter()
+        for key in self._read_keys():
+            self._handle_key(key, now)
+
+        for axis, updated_at in self._axis_updated_at.items():
+            if now - updated_at > self.config.command_timeout_s:
+                self._axis_direction[axis] = 0.0
+
+        if now - self._gripper_updated_at > self.config.command_timeout_s:
+            self._gripper_action = 1.0
+
+        action_dict = {
+            "delta_x": self._axis_direction["x"],
+            "delta_y": self._axis_direction["y"],
+            "delta_z": self._axis_direction["z"],
+        }
+        if self.config.use_gripper:
+            action_dict["gripper"] = self._gripper_action
+        return action_dict
+
+    def _read_keys(self) -> list[str]:
+        chars = []
+        while select.select([sys.stdin], [], [], 0)[0]:
+            chars.append(sys.stdin.read(1))
+
+        keys = []
+        i = 0
+        while i < len(chars):
+            if chars[i] == "\x1b" and i + 2 < len(chars) and chars[i + 1] == "[":
+                arrow_key = {
+                    "A": "up",
+                    "B": "down",
+                    "C": "right",
+                    "D": "left",
+                }.get(chars[i + 2])
+                if arrow_key is not None:
+                    keys.append(arrow_key)
+                    i += 3
+                    continue
+            keys.append(chars[i].lower())
+            i += 1
+        return keys
+
+    def _handle_key(self, key: str, now: float) -> None:
+        if key in {" ", "x"}:
+            self._axis_direction = {"x": 0.0, "y": 0.0, "z": 0.0}
+            self._gripper_action = 1.0
+            return
+
+        direction_by_key = {
+            "left": ("x", 1.0),
+            "a": ("x", 1.0),
+            "right": ("x", -1.0),
+            "d": ("x", -1.0),
+            "up": ("y", -1.0),
+            "w": ("y", -1.0),
+            "down": ("y", 1.0),
+            "s": ("y", 1.0),
+            "u": ("z", 1.0),
+            "j": ("z", -1.0),
+        }
+        if key in direction_by_key:
+            axis, direction = direction_by_key[key]
+            self._axis_direction[axis] = direction
+            self._axis_updated_at[axis] = now
+            return
+
+        gripper_by_key = {"o": 2.0, "c": 0.0}
+        if key in gripper_by_key:
+            self._gripper_action = gripper_by_key[key]
+            self._gripper_updated_at = now
+
+    def get_teleop_events(self) -> dict[str, Any]:
+        return {
+            TeleopEvents.IS_INTERVENTION: any(value != 0.0 for value in self._axis_direction.values()),
+            TeleopEvents.TERMINATE_EPISODE: False,
+            TeleopEvents.SUCCESS: False,
+            TeleopEvents.RERECORD_EPISODE: False,
+        }
+
+    def send_feedback(self, feedback: dict[str, Any]) -> None:
+        pass
+
+    @check_if_not_connected
+    def disconnect(self) -> None:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self._old_terminal_settings)
+        self._old_terminal_settings = None
 
 
 class KeyboardRoverTeleop(KeyboardTeleop):

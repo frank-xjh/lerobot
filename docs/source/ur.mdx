@@ -121,6 +121,12 @@ lerobot-calibrate --robot.type=ur_follower --robot.id=ur3e --robot.ip=192.168.0.
 lerobot-teleoperate --robot.type=ur_follower --robot.id=ur3e --robot.ip=192.168.0.10 --robot.max_relative_target=0.005 --robot.speed=0.03 --robot.acceleration=0.05 --fps=10 --teleop_time_s=5 --teleop.type=keyboard_ee
 ```
 
+Linux SSH/headless 终端使用 `terminal_keyboard_ee`，不要使用依赖图形桌面全局键盘监听的 `keyboard_ee`：
+
+```bash
+lerobot-teleoperate --robot.type=ur_follower --robot.id=ur3e --robot.ip=192.168.0.10 --robot.max_relative_target=0.005 --robot.speed=0.03 --robot.acceleration=0.05 --fps=10 --teleop_time_s=5 --teleop.type=terminal_keyboard_ee
+```
+
 ```bash
 lerobot-record --robot.type=ur_follower --robot.id=ur3e --robot.ip=192.168.0.10 --robot.max_relative_target=0.005 --robot.speed=0.03 --robot.acceleration=0.05 --teleop.type=gamepad --dataset.fps=10 --dataset.repo_id=local/ur3e_smoke --dataset.num_episodes=1 --dataset.episode_time_s=10 --dataset.reset_time_s=5 --dataset.single_task="UR3e smoke test" --dataset.video=false --dataset.push_to_hub=false
 ```
@@ -175,7 +181,34 @@ uv run --extra core_scripts --extra ur lerobot-teleoperate \
 | left/right `Ctrl` | 夹爪关闭/打开 |
 | `Esc` | 停止键盘监听 |
 
-如果方向和你的现场直觉不一致，先停止命令并重新确认坐标系，不要用连续长按来试探。键盘遥控依赖 `pynput`；在 Linux Wayland、headless/SSH 或 macOS 未授权 Accessibility/Input Monitoring 时可能捕获不到按键，这种情况下优先改用支持输入捕获的桌面会话或再测试手柄。
+如果方向和你的现场直觉不一致，先停止命令并重新确认坐标系，不要用连续长按来试探。`keyboard_ee` 依赖 `pynput`；在 Linux Wayland、headless/SSH 或 macOS 未授权 Accessibility/Input Monitoring 时可能捕获不到按键。这种情况下 Linux 可以使用 `terminal_keyboard_ee`，或者改用手柄。
+
+Linux SSH/headless 终端可以使用 `terminal_keyboard_ee`。它直接读取当前终端输入，不需要 X11、Wayland 或桌面全局键盘监听：
+
+```bash
+uv run --extra core_scripts --extra ur lerobot-teleoperate \
+    --robot.type=ur_follower \
+    --robot.id=ur3e \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.005 \
+    --robot.speed=0.03 \
+    --robot.acceleration=0.05 \
+    --fps=10 \
+    --teleop_time_s=5 \
+    --teleop.type=terminal_keyboard_ee
+```
+
+`terminal_keyboard_ee` 的按键：
+
+| Key | Action |
+| --- | ------ |
+| `←` / `→` or `A` / `D` | TCP x 方向小步移动 |
+| `↑` / `↓` or `W` / `S` | TCP y 方向小步移动 |
+| `U` / `J` | TCP z 方向小步移动 |
+| `O` / `C` | 夹爪打开/关闭 |
+| `Space` or `X` | 停止当前终端键盘 motion command |
+
+`terminal_keyboard_ee` 每次按键只保持很短时间的 motion command；按住键时依赖终端自动重复输入来持续移动，松开后会自动停止。
 
 ### 5. 再测试手柄连接和方向
 
@@ -276,14 +309,15 @@ uv run --extra core_scripts --extra ur --extra gamepad lerobot-record \
 ### 9. 常见首次问题
 
 - `No gamepad detected`：确认手柄已连接并被系统识别；Linux 通常走 `pygame`，macOS 会优先走 `hidapi`。
-- 键盘没有反应：确认不是 Wayland/headless/SSH 环境，macOS 需要给终端 Accessibility/Input Monitoring 权限。
+- 键盘没有反应：Linux Wayland/headless/SSH 使用 `terminal_keyboard_ee`；`keyboard_ee` 只适合能捕获全局按键的桌面会话。macOS 需要给终端 Accessibility/Input Monitoring 权限。
 - 机械臂不动：确认 UR 处于可接收 RTDE 控制状态，没有 protective stop，且 `max_relative_target`、workspace bounds 没把目标完全裁掉。
 - 夹爪方向相反：切换 `--robot.gripper_open_state=false`。
 - 第一次出现任何意外运动：降低到 `--robot.max_relative_target=0.002 --robot.speed=0.01 --robot.acceleration=0.02`，并缩短 `--teleop_time_s` 后重新单轴测试。
 
 ## Teleoperate
 
-You can teleoperate with an end-effector delta teleoperator such as `gamepad` or `keyboard_ee`.
+You can teleoperate with an end-effector delta teleoperator such as `gamepad`, `keyboard_ee`,
+or `terminal_keyboard_ee`.
 LeRobot automatically maps `delta_x`, `delta_y`, `delta_z`, and `gripper` into UR TCP pose
 actions using the current robot observation.
 
@@ -307,6 +341,17 @@ lerobot-teleoperate \
     --robot.ip=192.168.0.10 \
     --robot.max_relative_target=0.02 \
     --teleop.type=keyboard_ee
+```
+
+For Linux SSH/headless terminal sessions, use `terminal_keyboard_ee`:
+
+```bash
+lerobot-teleoperate \
+    --robot.type=ur_follower \
+    --robot.id=ur3e \
+    --robot.ip=192.168.0.10 \
+    --robot.max_relative_target=0.02 \
+    --teleop.type=terminal_keyboard_ee
 ```
 
 By default, commands are sent with `servoL`, which is intended for continuous control. For slower
@@ -402,7 +447,7 @@ Supported commands:
 
 | Command                | UR behavior                                                                        |
 | ---------------------- | ---------------------------------------------------------------------------------- |
-| `lerobot-teleoperate`  | Supports `gamepad` and `keyboard_ee` through automatic delta-to-TCP-pose mapping   |
+| `lerobot-teleoperate`  | Supports `gamepad`, `keyboard_ee`, and `terminal_keyboard_ee` through automatic delta-to-TCP-pose mapping |
 | `lerobot-record`       | Records TCP pose actions, joint/TCP observations, gripper state, and cameras       |
 | `lerobot-replay`       | Replays recorded TCP pose actions                                                  |
 | `lerobot-rollout`      | Deploys policies that output `ee.*` and `gripper.open` actions                     |

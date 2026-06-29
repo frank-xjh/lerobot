@@ -18,8 +18,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from lerobot.teleoperators.keyboard import teleop_keyboard as keyboard_module
-from lerobot.teleoperators.keyboard.configuration_keyboard import KeyboardEndEffectorTeleopConfig
-from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardEndEffectorTeleop
+from lerobot.teleoperators.keyboard.configuration_keyboard import (
+    KeyboardEndEffectorTeleopConfig,
+    TerminalKeyboardEndEffectorTeleopConfig,
+)
+from lerobot.teleoperators.keyboard.teleop_keyboard import (
+    KeyboardEndEffectorTeleop,
+    TerminalKeyboardEndEffectorTeleop,
+)
 
 _MODULE = "lerobot.teleoperators.keyboard.teleop_keyboard"
 
@@ -44,6 +50,10 @@ def _make_keyboard_ee(monkeypatch):
 
 def _get_action_without_connection_check(teleop):
     return KeyboardEndEffectorTeleop.get_action.__wrapped__(teleop)
+
+
+def _get_terminal_action_without_connection_check(teleop):
+    return TerminalKeyboardEndEffectorTeleop.get_action.__wrapped__(teleop)
 
 
 def test_keyboard_ee_opposite_key_press_overrides_stale_direction(monkeypatch):
@@ -83,3 +93,39 @@ def test_keyboard_ee_releasing_current_direction_stops_axis(monkeypatch):
 
     assert _Key.left not in teleop.current_pressed
     assert action["delta_x"] == 0.0
+
+
+def test_terminal_keyboard_ee_maps_terminal_keys(monkeypatch):
+    teleop = TerminalKeyboardEndEffectorTeleop(
+        TerminalKeyboardEndEffectorTeleopConfig(command_timeout_s=60.0)
+    )
+    key_batches = iter([["s"], ["w"], ["a"], ["d"], ["u"], ["j"], ["o"], ["c"], [" "]])
+    monkeypatch.setattr(teleop, "_read_keys", lambda: next(key_batches))
+
+    assert _get_terminal_action_without_connection_check(teleop)["delta_y"] == 1.0
+    assert _get_terminal_action_without_connection_check(teleop)["delta_y"] == -1.0
+    assert _get_terminal_action_without_connection_check(teleop)["delta_x"] == 1.0
+    assert _get_terminal_action_without_connection_check(teleop)["delta_x"] == -1.0
+    assert _get_terminal_action_without_connection_check(teleop)["delta_z"] == 1.0
+    assert _get_terminal_action_without_connection_check(teleop)["delta_z"] == -1.0
+    assert _get_terminal_action_without_connection_check(teleop)["gripper"] == 2.0
+    assert _get_terminal_action_without_connection_check(teleop)["gripper"] == 0.0
+
+    action = _get_terminal_action_without_connection_check(teleop)
+    assert action["delta_x"] == 0.0
+    assert action["delta_y"] == 0.0
+    assert action["delta_z"] == 0.0
+    assert action["gripper"] == 1.0
+
+
+def test_terminal_keyboard_ee_stops_stale_commands(monkeypatch):
+    teleop = TerminalKeyboardEndEffectorTeleop(
+        TerminalKeyboardEndEffectorTeleopConfig(command_timeout_s=0.1)
+    )
+    monkeypatch.setattr(keyboard_module.time, "perf_counter", lambda: 10.0)
+    monkeypatch.setattr(teleop, "_read_keys", lambda: ["s"])
+    assert _get_terminal_action_without_connection_check(teleop)["delta_y"] == 1.0
+
+    monkeypatch.setattr(keyboard_module.time, "perf_counter", lambda: 10.2)
+    monkeypatch.setattr(teleop, "_read_keys", lambda: [])
+    assert _get_terminal_action_without_connection_check(teleop)["delta_y"] == 0.0

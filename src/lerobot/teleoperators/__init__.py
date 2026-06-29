@@ -14,8 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Import keyboard teleoperators here so their draccus choices are registered for
+# entry points that only import the top-level teleoperators package.
+from . import keyboard as keyboard
 from .config import TeleoperatorConfig
 from .teleoperator import Teleoperator
 from .utils import TeleopEvents, make_teleoperator_from_config
 
-__all__ = ["Teleoperator", "TeleoperatorConfig", "TeleopEvents", "make_teleoperator_from_config"]
+__all__ = ["Teleoperator", "TeleoperatorConfig", "TeleopEvents", "keyboard", "make_teleoperator_from_config"]

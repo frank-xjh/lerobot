@@ -56,6 +56,13 @@ def _get_terminal_action_without_connection_check(teleop):
     return TerminalKeyboardEndEffectorTeleop.get_action.__wrapped__(teleop)
 
 
+def test_top_level_teleoperators_import_registers_terminal_keyboard_ee():
+    import lerobot.teleoperators  # noqa: F401
+    from lerobot.teleoperators.config import TeleoperatorConfig
+
+    assert "terminal_keyboard_ee" in TeleoperatorConfig.get_known_choices()
+
+
 def test_keyboard_ee_opposite_key_press_overrides_stale_direction(monkeypatch):
     teleop = _make_keyboard_ee(monkeypatch)
 
